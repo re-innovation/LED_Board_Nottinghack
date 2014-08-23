@@ -34,6 +34,7 @@ const int sLatch = 0;   //Pin connected to ST_CP of 74HC595
 const int sClk =  1;    //Pin connected to SH_CP of 74HC595
 const int sData = 4;    //Pin connected to DS of 74HC595
 const int led = 6;  //LED of Minimus
+const int swInputA = 7;  // An input switch
 
 int number = 0;  // This will be the displayed data
 
@@ -41,6 +42,19 @@ uint8_t dataArray[12];  // This holds the data to display
 
 uint8_t convertByte;  // a byte used as a holder to convert the font data
 
+int LEDcounter = 0;  // This times when the LEDs will flash
+int SWcounter = 0;  // This is a debounce counter for the switch
+
+int mode = 0;  // This holds the mode we are in
+
+boolean lastPress= LOW;  // This is to latch the button press
+
+int alphabet = 0;
+int alphabetCounter = 0;
+
+uint8_t displayBuffer[200];  // Buffer to hold the rendered text
+
+const char text[] = "Nottingham Hackspace";
 
 void setup()
 {
@@ -49,125 +63,153 @@ void setup()
   pinMode(sClk, OUTPUT);
   pinMode(sData, OUTPUT);
   pinMode(led, OUTPUT);   
+  pinMode(swInputA, INPUT_PULLUP); 
   
   memset(dataArray,0,sizeof(dataArray));  // Set dataArray to clear it 
- 
+  
+  // Render the text to the displayBuffer
+  textToBuffer(text);
   
 }
 
 void loop()
 { 
-  
+  // Write the dataArray to the LED matrix:
   digitalWrite(sLatch, LOW);  
-  //Output the matrix
   for(int j=0;j<sizeof(dataArray);j++)
   {     
-    shiftOut(sData, sClk, MSBFIRST, dataArray[j]);
-  //  delay(5);
+    //shiftOut(sData, sClk, MSBFIRST, dataArray[j]);
+    shiftOut(sData, sClk, LSBFIRST, dataArray[j]);  // Rotated text
   }
-  digitalWrite(sLatch, HIGH);  
-  
-  // output h
-  for(int j=0;j<12;j++)
-  {  
-    if(j<5)
+  digitalWrite(sLatch, HIGH); 
+
+  // Test the switch - should we change mode?
+  if(digitalRead(swInputA)==LOW&&lastPress==LOW)
+  {
+    // Button pressed so count up
+    SWcounter++;
+    if(SWcounter>=50)
     {
-      dataArray[j]=pgm_read_byte_near(System5x8 + (('F'-32)*5)+j) <<2;
+      mode++;
+      if(mode>2)
+      {
+        mode=0;
+      }
+      lastPress=HIGH;
     }
-    else if(j<10)
-    {
-      dataArray[j]=pgm_read_byte_near(System5x8 + (('U'-32)*5)+j) <<2;
-    }
-    else
-    {
-      dataArray[j] = B11111111;
-    }  
-  } 
- 
-  
-
-
-  
-  digitalWrite(led, HIGH);   // turn the LED on (HIGH is the voltage level)       
-  delay(250);   // Delay for a second
-  digitalWrite(led, LOW);   // turn the LED on (HIGH is the voltage level)
-  delay(250);
-
- 
-//    digitalWrite(sLatch, LOW);
-//    shiftOut(sData, sClk, MSBFIRST, dataArray[System5x8['h']+j]);
-//    digitalWrite(sLatch, HIGH); 
- 
- 
-//  
-//  
-//  
-////  for(int i=0;i<12;i++)
-////  {
-////    
-//    for(int y=1;y<9;y++)
-//    {
-//      digitalWrite(led, HIGH);   // turn the LED on (HIGH is the voltage level)
-//      
-//       // take the latchPin low so the LEDs don't change while you're sending in bits:
-//      digitalWrite(sLatch, LOW);
-//      // shift out the bits:
-//      // Send data via 3 shift registers:
-//      
-//      //shiftOut(sData, sClk, MSBFIRST, intData(y));
-//      
-//      shiftOut(sData, sClk, MSBFIRST, B11111111);      
-//      //shiftOut(sData, sClk, MSBFIRST, B00000000); 
-//      shiftOut(sData, sClk, MSBFIRST, B11111111); 
-//      
-//      //take the latch pin high so the LEDs will light up:
-//      digitalWrite(sLatch, HIGH);
-//      //Serial.println(number);
-//      delay(250);   // Delay for a second
-//      digitalWrite(led, LOW);   // turn the LED on (HIGH is the voltage level)
-//      delay(250);  
-//    }
-//    
-////  }
-
-
-}
-
-// This function returns the correct binary value to display the integer
-int intData (int segmentData)
-{
-  int displayData;
-  
-  switch (segmentData)
+  }
+  else if (digitalRead(swInputA)==HIGH&&lastPress==HIGH)
+  {
+    // Button NOT pressed - reset everything
+    SWcounter=0;
+    lastPress=LOW;
+  }
+     
+  // Choose what to do depending upon the mode:
+  // Mode are:
+  // 0 = flash random colours
+  // 1 = Write "Nottingham Hackspace"
+  // 2 = Write "ERROR"
+  switch(mode)
   {
     case 0:
-      displayData = B00000000;  // The number 0 in binary   
+      // Mode = 0   
+      // output the data from the text bufer
+      for(int j=0;j<12;j++)
+      { 
+        dataArray[j]=displayBuffer[j];
+      } 
     break;
+    
     case 1:
-      displayData = B00000010;  // The number 1 in binary   
+      for(int j=0;j<12;j++)
+      {  
+        dataArray[j] = B11111111;
+      }
     break;
+ 
     case 2:
-      displayData = B00000001;  // The number 2 in binary   
-    break;
-    case 3:
-      displayData = B10000000;  // The number 3 in binary   
-    break;
-    case 4:
-      displayData = B01000000;  // The number 4 in binary   
-    break;
-    case 5:
-      displayData = B00100000;  // The number 5 in binary   
-    break;
-    case 6:
-      displayData = B00010000;  // The number 6 in binary   
-    break;
-    case 7:
-      displayData = B00001000;  // The number 7 in binary   
-    break;
-    case 8:
-      displayData = B00000100;  // The number 8 in binary   
-    break; 
+      if(alphabetCounter>=100)
+      {
+        alphabet++;
+        alphabetCounter=0;  // Reset the counter
+      }
       
+      alphabetCounter++;
+       
+      for(int j=0;j<12;j++)
+      { 
+        
+        if(j<5)
+        {       
+          // This takes the byte from the program memory
+          // The shift register is in the bit format 70123456, so we must move the last bit and push it into the first bit.
+          convertByte = pgm_read_byte_near(System5x8 + (('A'+alphabet-32)*5)+j);
+//          dataArray[4-j]=convertByte<<1;
+//          dataArray[4-j]|=(convertByte & 0x80)?1:0;     
+          dataArray[j]=convertByte>>1;  // Upside down text
+          //dataArray[j]|=(convertByte & 0x01)?1:0;  
+
+        }
+        else
+        {
+          //dataArray[j] = B11111111;
+          dataArray[j] = B00000000;
+        }  
+      } 
+    break;   
+    
+    default:
+    // Do this when not in a mode
+       
+    break;    
   }
-  return displayData;
+
+  // Here we flash the LED to show its working:     
+  if(LEDcounter<=25)
+  {
+    digitalWrite(led, HIGH);   // turn the LED on (HIGH is the voltage level)       
+  }
+  else if (LEDcounter<=50)
+  {
+    digitalWrite(led, LOW);   // turn the LED on (HIGH is the voltage level)
+  }
+  else 
+  {
+    LEDcounter=0;
+  }
+  LEDcounter++;
+  
+  // This is the main delay and slows everything down a bit.
+  delay(10);
+  
+}
+
+
+// Takes in a String, converts that data into display data and puts into displayBuffer
+void textToBuffer(const char* buf)
+{
+  int col = 0;  // Column index
+  uint8_t data; 
+  
+  for(int i=0;i<strlen(buf);i++)
+  {
+    char c = buf[i];
+    // Check for if the char is in valid ascii range
+    // Range for this font is 32 - 127 (0x20 - 0x7F)
+    
+    for(int j=0;j<5;j++)
+    {
+      // The shift register is in the bit format 70123456, so we must move the last bit and push it into the first bit.
+      data = pgm_read_byte_near(System5x8 + ((c-32)*5)+j);
+      //displayBuffer[col]=data<<1;
+      //displayBuffer[col]|=(data & 0x80)?1:0; 
+      displayBuffer[col]=data>>1;
+      //displayBuffer[col]|=(data & 0x01)?1:0;      
+      
+      col++;         
+    } 
+    // Add inter-char gap
+    displayBuffer[col++]=0;
+  }
 }
